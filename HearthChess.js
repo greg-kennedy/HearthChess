@@ -23,18 +23,25 @@ var deck_b = ["b_pawn","b_pawn","b_pawn","b_pawn","b_pawn","b_pawn","b_pawn","b_
 var deck_w = ["w_pawn","w_pawn","w_pawn","w_pawn","w_pawn","w_pawn","w_pawn","w_pawn","w_rook","w_rook","w_knight","w_knight","w_bishop","w_bishop","w_queen"];
 var hand_b = [];
 var hand_w = [];
+//var board_b = ['b_m_pawn','b_m_pawn','b_m_pawn','b_m_pawn','b_m_pawn','b_m_pawn','b_m_pawn'];
+//var board_w = ['w_m_pawn','w_m_pawn','w_m_pawn','w_m_pawn'];
 var board_b = [];
 var board_w = [];
 var maxmana_b = 0;
 var maxmana_w = 0;
 var mana_b = 0;
-var mana_w = 0;
+var mana_w = 1;
+var health_b = 30;
+var health_w = 20;
 
 // The rest of these probably shouldn't be globals, but oh well
 var animTimer;
+var animType;
+var animParam;
 var mulligan = [0,0,0];
 var preMullHand;
 
+var cardDetailID;
 var cardDetail = null;
 var cardDetailX;
 var cardDetailY;
@@ -89,6 +96,12 @@ function drawCard(deck) {
   var card = deck[index];
   deck.splice(index,1);
   return card;
+}
+
+// Draw filled, outlined text
+function drawText(text, x, y) {
+  ctx.strokeText(text, x, y);
+  ctx.fillText(text, x, y);
 }
 
 // Window resize stuff
@@ -187,7 +200,7 @@ function drawMulliganAnim() {
   // check if this animation cycle has completed
   if (timeOffset >= 4000)
   {
-    setState("main");
+    setState("turn_w");
   } else {
     // animations should redraw continually
     requestAnimationFrame(drawMulliganAnim);
@@ -251,7 +264,9 @@ function mousedownMain(event) {
   var y = event.offsetY / scalefactor;
 
   // Check mouse inside detailCard bounds, and enough room on board to play a minion
-  if (checkBounds(x,y,cardDetailX,cardDetailY,cardDetail) && board_w.length < 7) {
+  if (checkBounds(x,y,cardDetailX,cardDetailY,cardDetail) &&
+         board_w.length < 7 &&
+		 mana_w >= manaCost[hand_w[cardDetailID].substring(2)]) {
     // Ok start an arrow here
 	arrowStartX = cardDetailX + (cardDetail.width / 2);
 	arrowStartY = cardDetailY + (cardDetail.height / 2);	
@@ -295,6 +310,19 @@ function mouseupMain(event) {
 	  if (x > 125 && x < 1200 && y > 500 && y < 680) {
 	    // Trying to play a minion to the board.
 		//  Add a space to indicate where this would go.
+		// Get card type
+		mana_w -= manaCost[hand_w[cardDetailID].substring(2)];
+		hand_w.splice(cardDetailID,1);
+		// ID where we are trying to place it
+		var new_id = (x - (720 - (board_w.length * 65))) / 65;
+		if (new_id < 0) new_id = 0;
+		if (new_id > board_w.length) new_id = board_w.length;
+		board_w.splice(new_id,0,cardDetailID);
+
+		// Play summoning animation
+		animTimer = Date.now();
+		animType = 'summon';
+		animParam = new_id;
 	  }
 	} else if (arrowSource == "power") {
 	  // From the hero power
@@ -345,6 +373,7 @@ function mousemoveMain(event) {
   for (var i = hand_w.length - 1; i >= 0; i--) {
     if (checkBounds(x,y,400 + spacing*i,930,resources.items[hand_w[i]])) {
 	  // Add a card detail for this point
+	  cardDetailID = i;
 	  cardDetail = resources.items[hand_w[i]];
 	  cardDetailX = 400 + spacing*i;
 	  cardDetailY = 710;
@@ -363,8 +392,60 @@ function mousemoveMain(event) {
 }
 
 function drawMain() {
+  // compute time offset
+  var timeOffset = Date.now() - animTimer;
+
+  // check if this animation cycle has completed
+  //  for simplicity all anims last .5 sec
+  if (timeOffset >= 500) { animTimer = 0; } else { requestAnimationFrame(drawfunc); }
+
+  // font settings for canvas
+  ctx.font = "28px Sans-serif"
+  ctx.strokeStyle = 'black';
+  ctx.lineWidth = 8;
+  ctx.fillStyle = 'white';
+
   // draw board
   ctx.drawImage(resources.items.board,0,0);
+
+  // text items
+  drawText(mana_b + "/" + maxmana_b,950,80);
+  drawText(mana_w + "/" + maxmana_w,985,1010);
+  drawText(health_b,765,280);
+  drawText(health_w,765,910);
+  drawText(deck_b.length,1330,350);
+  drawText(deck_w.length,1330,650);
+
+  // mana crystals
+  for (var i = 0; i < maxmana_w; i ++) {
+    var xpos = 1055 + (33 * i);
+	if (i < mana_w) {
+      ctx.drawImage(resources.items.mana_full,xpos,985, 32, 32);
+    } else {
+      ctx.drawImage(resources.items.mana_empty,xpos,985, 32, 32);
+    }
+  }
+
+  // minions
+  var xpos = 720 - (board_b.length * 65);
+  for (var i = 0; i < board_b.length; i++) {
+    ctx.drawImage(resources.items[board_b[i]], xpos + (i * 130), 330, 120, 157);
+//	drawText("6", xpos + 90 + (i * 130), 465);
+  }
+
+  var xpos = 720 - (board_w.length * 65);
+  for (var i = 0; i < board_w.length; i++) {
+    if ((animType == 'summon') && (i == animParam)) {
+      // draw minion "summon" shadow, alpha-inverse
+      ctx.globalAlpha = 1 - (timeOffset / 500);
+      ctx.drawImage(resources.items['summon'], xpos + (i * 130), 520, 120, 157);
+      // now draw the minion w/alpha
+      ctx.globalAlpha = (timeOffset / 500);
+	}
+    ctx.drawImage(resources.items[board_w[i]], xpos + (i * 130), 520, 120, 157);
+    ctx.globalAlpha = 1;
+//	drawText("6", xpos + 90 + (i * 130), 655);
+  }
 
   // draw opponent's hand
   var spacing = Math.floor(300 / (hand_b.length + 1));
@@ -375,7 +456,12 @@ function drawMain() {
   // draw my hand
   spacing = Math.floor(500 / (hand_w.length + 1));
   for (i = 0; i < hand_w.length; i++) {
+    if ((animType == 'draw') && (i == animParam)) {
+      // draw board, darkened
+      ctx.globalAlpha = (timeOffset / 500);
+	}
     ctx.drawImage(resources.items[hand_w[i]],400 + spacing*i,930);
+    ctx.globalAlpha = 1;
   }
 
   // card detail
@@ -411,13 +497,41 @@ function setState(state) {
 	// clock time
 	animTimer = Date.now();
 	drawfunc = drawMulliganAnim;
-  } else {
+  } else if (state == "turn_w") {
     // Register mouse-up, -down, and -move handlers
 	canvas.onmousedown = mousedownMain;
 	canvas.onmouseup = mouseupMain;
 	canvas.onmousemove = mousemoveMain;
-	
+
+	// Upkeep - add mana
+	maxmana_w ++;
+	if (maxmana_w > 10) { maxmana_w = 10; }
+	mana_w = maxmana_w;
+
+	// Draw a card from deck
+	hand_w.push(drawCard(deck_w));
+	animTimer = Date.now();
+	animType = 'draw';
+	animParam = hand_w.length - 1;
+
 	drawfunc = drawMain;
+  } else if (state == "turn_b") {
+    // Opponent's turn, remove all handlers
+	canvas.onmousedown = null;
+	canvas.onmouseup = null;
+	canvas.onmousemove = null;
+
+	// Upkeep - add mana
+	maxmana_b ++;
+	if (maxmana_b > 10) { maxmana_b = 10; }
+	mana_b = maxmana_b;
+
+	// Draw a card from deck
+	hand_b.push(drawCard(deck_b));
+	animTimer = Date.now();
+	drawfunc = drawBlackTurn;
+  } else {
+    alert("Reached invalid state " + state);
   }
   requestAnimationFrame(drawfunc);
 }
@@ -430,11 +544,13 @@ function init() {
 
   // ui elements
   resources.addImage("board");
+  resources.addImage("enemy_turn");
   resources.addImage("discard");
   resources.addImage("confirm");
   resources.addImage("arrow");
   resources.addImage("mana_empty");
   resources.addImage("mana_full");
+  resources.addImage("summon");
   // minion tokens
   resources.addImage("w_m_queen");
   resources.addImage("w_m_rook");
